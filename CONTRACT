@@ -1,0 +1,5 @@
+# The protocol contract this module implements.
+repository: https://github.com/straum-io/straum
+commit: 2cf1b36ca1e57cdd8143e28c65f70baa14eefab6
+spec: docs/protocol.md (protocol version 0)
+conformance: conformance/ (copied to testdata/conformance/)
