@@ -1,3 +1,3 @@
 module github.com/straum-io/straum-go-sdk
 
-go 1.26.5
+go 1.26.0

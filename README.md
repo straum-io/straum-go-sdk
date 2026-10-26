@@ -34,7 +34,7 @@ partition per topic, and no authentication beyond loopback.
 
 ## Quick start
 
-You need Go 1.26.5 or later and a running `straum-broker` (build it from
+You need Go 1.26 or later and a running `straum-broker` (build it from
 the Straum repository; `cargo run --release -p straum-broker -- --data-dir
 /tmp/straum --cluster-id dev --node-id 1 --listen 127.0.0.1:7171`).
 

@@ -3,6 +3,8 @@ name: ci
 # scripts/validate.sh on GitHub's Linux runner: the unit checks, -race and a
 # fuzz smoke run in one job; the live conformance against straum-broker and
 # straum-fake-server built from the Straum commit in CONTRACT in another.
+# Both run on the newest patch of Go 1.26 (the minimum in go.mod) and 1.27
+# (D-211).
 on:
   push:
     branches: [main]
@@ -14,11 +16,15 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26.x", "1.27.x"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
       - run: scripts/validate.sh quick
       - name: govulncheck (version pinned in scripts/validate.sh)
         run: |
@@ -32,6 +38,10 @@ jobs:
 
   conformance:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26.x", "1.27.x"]
     steps:
       - uses: actions/checkout@v4
       - id: contract
@@ -44,7 +54,7 @@ jobs:
           path: straum
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
