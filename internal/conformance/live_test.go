@@ -188,8 +188,10 @@ func TestLiveSDK(t *testing.T) {
 	if err != nil || len(m.Topics) != 2 || m.Topics[0].Partitions[0].NextSeq != writers*each+2 || m.Topics[1].Error != straumerr.UnknownTopic {
 		t.Fatalf("metadata: %+v %v", m, err)
 	}
+	// The store counters include the broker's own records: one per
+	// CreateTopic (docs/protocol.md 4.11).
 	s, err := a.BrokerStats(ctx)
-	if err != nil || s.MessagesAccepted < writers*each+2 || s.MessagesDeduplicated == 0 {
+	if err != nil || s.MessagesAccepted != writers*each+2+1 || s.MessagesDeduplicated != 1 {
 		t.Fatalf("stats: %+v %v", s, err)
 	}
 	if _, err := a.Ping(ctx); err != nil {
