@@ -20,7 +20,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/validate.sh quick
-      - run: go run "$(sed -n 's/^GOVULNCHECK="\(.*\)"$/\1/p' scripts/validate.sh)" ./...
+      - name: govulncheck (version pinned in scripts/validate.sh)
+        run: |
+          go run "$(sed -n 's/^GOVULNCHECK="\(.*\)"$/\1/p' scripts/validate.sh)" ./...
       - run: go test -race -count=1 ./...
       - name: Fuzz smoke
         run: |
@@ -33,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: contract
-        run: echo "commit=$(sed -n 's/^commit: //p' CONTRACT)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "commit=$(sed -n 's/^commit: //p' CONTRACT)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: straum-io/straum
