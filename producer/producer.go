@@ -37,6 +37,10 @@ type Options struct {
 	// ProducerID identifies the producer to the broker. 0 picks a random
 	// id; set it to keep one id across restarts.
 	ProducerID uint64
+	// FirstSeq is the producer seq of the first request; later requests
+	// count up from it. A producer restarted with the same id continues
+	// its sequence from here.
+	FirstSeq uint64
 }
 
 // New returns a producer that sends through c.
@@ -47,7 +51,9 @@ func New(c *client.Client, opts Options) *Producer {
 		_, _ = rand.Read(b[:]) // never fails (crypto/rand)
 		id = binary.LittleEndian.Uint64(b[:])
 	}
-	return &Producer{c: c, id: id}
+	p := &Producer{c: c, id: id}
+	p.seq.Store(opts.FirstSeq)
+	return p
 }
 
 // ID is the producer id sent with every request.

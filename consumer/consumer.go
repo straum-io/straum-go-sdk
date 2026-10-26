@@ -22,8 +22,8 @@ type Options struct {
 	// message is returned even if it alone is larger.
 	MaxBytes uint32
 	// MaxWait is how long the broker waits for a message when none is
-	// available (default 500 ms); the broker caps it at its
-	// max_fetch_wait_ms.
+	// available (default 500 ms; a negative value: no wait); the broker
+	// caps it at its max_fetch_wait_ms.
 	MaxWait time.Duration
 }
 
@@ -31,7 +31,7 @@ func (o Options) withDefaults() Options {
 	if o.MaxBytes == 0 {
 		o.MaxBytes = 1 << 20
 	}
-	if o.MaxWait <= 0 {
+	if o.MaxWait == 0 {
 		o.MaxWait = 500 * time.Millisecond
 	}
 	return o
@@ -53,7 +53,7 @@ func New(c *client.Client, opts Options) *Consumer {
 // A fromSeq below the partition's StartSeq skips released messages. The
 // next position is the last message's Seq + 1.
 func (c *Consumer) Fetch(ctx context.Context, topic string, partition uint32, fromSeq uint64) (*wire.FetchOk, error) {
-	maxWait := min(c.opts.MaxWait.Milliseconds(), 1<<32-1)
+	maxWait := min(max(c.opts.MaxWait.Milliseconds(), 0), 1<<32-1)
 	resp, err := c.c.DoPartition(ctx, topic, partition, func(epoch uint32) wire.Request {
 		return &wire.Fetch{
 			Topic:               topic,
