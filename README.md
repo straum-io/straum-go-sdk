@@ -97,7 +97,7 @@ Straum checkout and exits 1 if it changed; `--check` compares only.
 
 ```sh
 scripts/validate.sh quick                 # before a commit: gofmt, vet, staticcheck, unit tests
-scripts/validate.sh push <straum-checkout> # before a push: quick, -race, live conformance
+scripts/validate.sh push <straum-checkout> # before a push: quick, govulncheck, -race, live conformance
 scripts/validate.sh pr <straum-checkout>   # before a PR: push, fuzzing 30 s per target
 ```
 
@@ -108,8 +108,9 @@ toolchain: `scripts/live.sh` builds `straum-broker` and
 Linux.
 
 Tooling outside the standard library: `staticcheck`
-(`honnef.co/go/tools`, version pinned in `scripts/validate.sh`), run with
-`go run`, so it is not a dependency of the module.
+(`honnef.co/go/tools`) and `govulncheck` (`golang.org/x/vuln`), versions
+pinned in `scripts/validate.sh` and run with `go run`, so neither is a
+dependency of the module.
 
 ## License
 

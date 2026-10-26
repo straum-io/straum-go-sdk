@@ -20,6 +20,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: scripts/validate.sh quick
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: go test -race -count=1 ./...
       - name: Fuzz smoke
         run: |
