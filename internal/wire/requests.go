@@ -14,8 +14,8 @@ type Hello struct {
 // Ping is allowed before Hello (section 4.2).
 type Ping struct{ Nonce uint64 }
 
-// Metadata asks for topics' partitions and leaders; no topics means every
-// topic (section 4.3).
+// Metadata asks for topics' partitions and leaders, at most 1000 topics;
+// no topics returns only the cluster and its nodes (section 4.3).
 type Metadata struct{ Topics []string }
 
 // CreateTopic (section 4.4).
