@@ -20,7 +20,8 @@ import (
 	"time"
 
 	"github.com/straum-io/straum-go-sdk/client"
-	"github.com/straum-io/straum-go-sdk/wire"
+	"github.com/straum-io/straum-go-sdk/internal/link"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 )
 
 // Producer sends Produce requests through a client. It is safe for
@@ -70,9 +71,13 @@ type Ack struct {
 	Timestamp   time.Time
 }
 
+// Partition is the protocol's default partitioner (docs/protocol.md section
+// 7): crc32c(key) mod partitions, 0 if partitions is 0.
+func Partition(key []byte, partitions uint32) uint32 { return wire.Partition(key, partitions) }
+
 // Produce sends one message; the default partitioner picks its partition
 // from its key.
-func (p *Producer) Produce(ctx context.Context, topic string, m wire.Message) (Ack, error) {
+func (p *Producer) Produce(ctx context.Context, topic string, m client.Message) (Ack, error) {
 	n, err := p.c.PartitionCount(ctx, topic)
 	if err != nil {
 		return Ack{}, err
@@ -88,12 +93,23 @@ func (p *Producer) Produce(ctx context.Context, topic string, m wire.Message) (A
 
 // ProduceTo sends messages to one partition in one request. They get
 // consecutive seqs, in order.
-func (p *Producer) ProduceTo(ctx context.Context, topic string, partition uint32, messages ...wire.Message) (Ack, error) {
+func (p *Producer) ProduceTo(ctx context.Context, topic string, partition uint32, messages ...client.Message) (Ack, error) {
 	if len(messages) == 0 {
 		return Ack{}, fmt.Errorf("producer: no messages")
 	}
+	wms := make([]wire.Message, len(messages))
+	for i, m := range messages {
+		wms[i] = wire.Message{Key: m.Key, Body: m.Body}
+		if len(m.Headers) > 0 {
+			hs := make([]wire.Header, len(m.Headers))
+			for j, h := range m.Headers {
+				hs[j] = wire.Header(h)
+			}
+			wms[i].Headers = hs
+		}
+	}
 	seq := p.seq.Add(1) - 1
-	resp, err := p.c.DoPartition(ctx, topic, partition, func(epoch uint32) wire.Request {
+	resp, err := link.DoPartition(p.c, ctx, topic, partition, func(epoch uint32) wire.Request {
 		return &wire.Produce{
 			Topic:               topic,
 			Partition:           partition,
@@ -101,7 +117,7 @@ func (p *Producer) ProduceTo(ctx context.Context, topic string, partition uint32
 			ProducerSeq:         seq,
 			AckLevel:            wire.AckDurable,
 			ExpectedLeaderEpoch: epoch,
-			Messages:            messages,
+			Messages:            wms,
 		}
 	})
 	if err != nil {

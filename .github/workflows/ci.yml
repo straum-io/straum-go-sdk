@@ -27,7 +27,7 @@ jobs:
       - name: Fuzz smoke
         run: |
           for target in FuzzDecodeRequest FuzzDecodeResponse FuzzFrame; do
-            go test ./wire/ -run '^$' -fuzz "^${target}\$" -fuzztime 10s
+            go test ./internal/wire/ -run '^$' -fuzz "^${target}\$" -fuzztime 10s
           done
 
   conformance:

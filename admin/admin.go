@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/straum-io/straum-go-sdk/client"
-	"github.com/straum-io/straum-go-sdk/wire"
+	"github.com/straum-io/straum-go-sdk/internal/link"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 )
 
 // Admin sends administrative requests through a client. It is safe for
@@ -33,7 +34,7 @@ type TopicConfig struct {
 
 func do[T wire.Response](ctx context.Context, a *Admin, req wire.Request) (T, error) {
 	var zero T
-	resp, err := a.c.Do(ctx, req)
+	resp, err := link.Do(a.c, ctx, req)
 	if err != nil {
 		return zero, err
 	}
@@ -66,28 +67,89 @@ func (a *Admin) CreateTopic(ctx context.Context, name string, cfg TopicConfig) e
 // Metadata returns the nodes and the given topics' partitions, or every
 // topic if none is given. A missing topic is listed with Error
 // straumerr.UnknownTopic.
-func (a *Admin) Metadata(ctx context.Context, topics ...string) (*wire.MetadataOk, error) {
+func (a *Admin) Metadata(ctx context.Context, topics ...string) (*client.Metadata, error) {
 	return a.c.Metadata(ctx, topics...)
 }
 
+// TopicSummary is a topic's name and partition count.
+type TopicSummary struct {
+	Name       string
+	Partitions uint32
+}
+
 // ListTopics returns every topic by name.
-func (a *Admin) ListTopics(ctx context.Context) ([]wire.TopicSummary, error) {
+func (a *Admin) ListTopics(ctx context.Context) ([]TopicSummary, error) {
 	r, err := do[*wire.ListTopicsOk](ctx, a, &wire.ListTopics{})
 	if err != nil {
 		return nil, err
 	}
-	return r.Topics, nil
+	out := make([]TopicSummary, len(r.Topics))
+	for i, t := range r.Topics {
+		out[i] = TopicSummary(t)
+	}
+	return out, nil
+}
+
+// PartitionDescription is a partition's seq range and storage.
+type PartitionDescription struct {
+	Partition    uint32
+	StartSeq     uint64
+	NextSeq      uint64
+	MessageCount uint64
+	IndexBytes   uint64
+}
+
+// TopicDescription is a topic's configuration and partitions.
+type TopicDescription struct {
+	Name              string
+	ReplicationFactor uint16
+	Retention         time.Duration // 0: everything is kept
+	Partitions        []PartitionDescription
 }
 
 // DescribeTopic returns a topic's configuration and partitions.
-func (a *Admin) DescribeTopic(ctx context.Context, name string) (*wire.DescribeTopicOk, error) {
-	return do[*wire.DescribeTopicOk](ctx, a, &wire.DescribeTopic{Name: name})
+func (a *Admin) DescribeTopic(ctx context.Context, name string) (*TopicDescription, error) {
+	r, err := do[*wire.DescribeTopicOk](ctx, a, &wire.DescribeTopic{Name: name})
+	if err != nil {
+		return nil, err
+	}
+	d := &TopicDescription{Name: r.Name, ReplicationFactor: r.ReplicationFactor,
+		Retention: time.Duration(r.RetentionMs) * time.Millisecond, Partitions: make([]PartitionDescription, len(r.Partitions))}
+	for i, p := range r.Partitions {
+		d.Partitions[i] = PartitionDescription(p)
+	}
+	return d, nil
+}
+
+// BrokerStats are the counters of one broker (docs/protocol.md, BrokerStats).
+type BrokerStats struct {
+	NodeID               uint32
+	OpenConnections      uint32
+	PendingBytes         uint64
+	PendingBytesPeak     uint64
+	MaxPendingBytes      uint64
+	FetchWaiters         uint32
+	ProduceRequests      uint64
+	GroupsCommitted      uint64
+	Fsyncs               uint64
+	MessagesAccepted     uint64
+	MessagesDeduplicated uint64
+	BodyBytesReceived    uint64
+	BodyBytesNew         uint64
+	WalBytes             uint64
+	SegmentBytes         uint64
+	IndexBytes           uint64
 }
 
 // BrokerStats returns the counters of the broker the client is connected
 // to.
-func (a *Admin) BrokerStats(ctx context.Context) (*wire.BrokerStatsOk, error) {
-	return do[*wire.BrokerStatsOk](ctx, a, &wire.BrokerStats{})
+func (a *Admin) BrokerStats(ctx context.Context) (*BrokerStats, error) {
+	r, err := do[*wire.BrokerStatsOk](ctx, a, &wire.BrokerStats{})
+	if err != nil {
+		return nil, err
+	}
+	s := BrokerStats(*r)
+	return &s, nil
 }
 
 // Ping checks that a broker answers and returns the round-trip time.

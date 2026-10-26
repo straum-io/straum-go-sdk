@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 func frameOf(t testing.TB, req wire.Request) []byte {

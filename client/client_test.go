@@ -10,8 +10,9 @@ import (
 
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/internal/fakebroker"
+	"github.com/straum-io/straum-go-sdk/internal/link"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 func connect(t *testing.T, b *fakebroker.Broker, mod func(*client.Config)) *client.Client {
@@ -41,7 +42,7 @@ func TestHelloAndPing(t *testing.T) {
 	if err != nil || h.ClusterID != "fake" || h.NodeID != 1 {
 		t.Fatalf("hello %+v, %v", h, err)
 	}
-	resp, err := c.Do(context.Background(), &wire.Ping{Nonce: 9})
+	resp, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 9})
 	if err != nil || resp.(*wire.Pong).Nonce != 9 {
 		t.Fatalf("%v %v", resp, err)
 	}
@@ -68,7 +69,7 @@ func TestPipeliningOutOfOrder(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Go(func() {
-			resp, err := c.Do(context.Background(), &wire.Ping{Nonce: uint64(i)})
+			resp, err := link.Do(c, context.Background(), &wire.Ping{Nonce: uint64(i)})
 			if err != nil || resp.(*wire.Pong).Nonce != uint64(i) {
 				t.Errorf("ping %d: %v %v", i, resp, err)
 			}
@@ -85,7 +86,7 @@ func TestErrorIsTyped(t *testing.T) {
 		c.Reply(corr, &wire.Error{Code: straumerr.UnknownTopic, Message: "x"})
 	})
 	c := connect(t, b, nil)
-	_, err := c.Do(context.Background(), &wire.DescribeTopic{Name: "x"})
+	_, err := link.Do(c, context.Background(), &wire.DescribeTopic{Name: "x"})
 	var se *straumerr.Error
 	if !errors.Is(err, straumerr.UnknownTopic) || !errors.As(err, &se) || se.Message != "x" {
 		t.Fatalf("got %v", err)
@@ -108,7 +109,7 @@ func TestReconnectRetriesSameRequest(t *testing.T) {
 		c.Reply(corr, &wire.ProduceOk{BaseSeq: 4, Count: 1})
 	})
 	c := connect(t, b, nil)
-	resp, err := c.DoPartition(context.Background(), "t", 0, func(epoch uint32) wire.Request {
+	resp, err := link.DoPartition(c, context.Background(), "t", 0, func(epoch uint32) wire.Request {
 		return &wire.Produce{Topic: "t", ProducerID: 1, ProducerSeq: 42, AckLevel: wire.AckDurable,
 			ExpectedLeaderEpoch: epoch, Messages: []wire.Message{{Body: []byte("x")}}}
 	})
@@ -143,14 +144,14 @@ func TestNotLeaderMovesToLeader(t *testing.T) {
 		}
 	})
 	c := connect(t, first, nil)
-	resp, err := c.DoPartition(context.Background(), "t", 0, func(epoch uint32) wire.Request {
+	resp, err := link.DoPartition(c, context.Background(), "t", 0, func(epoch uint32) wire.Request {
 		return &wire.Produce{Topic: "t", ExpectedLeaderEpoch: epoch, AckLevel: wire.AckDurable, Messages: []wire.Message{{}}}
 	})
 	if err != nil || resp.(*wire.ProduceOk).LeaderEpoch != 7 {
 		t.Fatalf("%v %v", resp, err)
 	}
 	// Leader errors on a request without a partition are returned.
-	if _, err := c.Do(context.Background(), &wire.Produce{Topic: "t"}); err == nil {
+	if _, err := link.Do(c, context.Background(), &wire.Produce{Topic: "t"}); err == nil {
 		t.Fatal("NotLeader without a partition was not returned")
 	}
 }
@@ -165,10 +166,10 @@ func TestContextCancelKeepsConnection(t *testing.T) {
 	c := connect(t, b, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := c.Do(ctx, &wire.Ping{Nonce: 1}); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := link.Do(c, ctx, &wire.Ping{Nonce: 1}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("got %v", err)
 	}
-	if _, err := c.Do(context.Background(), &wire.Ping{Nonce: 2}); err != nil {
+	if _, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 2}); err != nil {
 		t.Fatal(err)
 	}
 	if b.Accepted() != 1 {
@@ -190,10 +191,10 @@ func TestInFlightBound(t *testing.T) {
 		// A Ping frame is 22 bytes: one fits in 30, two do not.
 		c := connect(t, b, func(cfg *client.Config) { cfg.MaxInFlightBytes = 30; cfg.FailWhenFull = failFast })
 		first := make(chan error, 1)
-		go func() { _, err := c.Do(context.Background(), &wire.Ping{Nonce: 1}); first <- err }()
+		go func() { _, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 1}); first <- err }()
 		time.Sleep(50 * time.Millisecond)
 		second := make(chan error, 1)
-		go func() { _, err := c.Do(context.Background(), &wire.Ping{Nonce: 2}); second <- err }()
+		go func() { _, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 2}); second <- err }()
 		if failFast {
 			if err := <-second; !errors.Is(err, client.ErrInFlightFull) {
 				t.Fatalf("fail fast: got %v", err)
@@ -224,7 +225,7 @@ func TestFrameTooLargeIsCheckedLocally(t *testing.T) {
 		t.Error("the broker received an oversized frame")
 	})
 	c := connect(t, b, nil)
-	_, err := c.Do(context.Background(), &wire.Produce{Topic: "t", Messages: []wire.Message{{Body: make([]byte, 200)}}})
+	_, err := link.Do(c, context.Background(), &wire.Produce{Topic: "t", Messages: []wire.Message{{Body: make([]byte, 200)}}})
 	if !errors.Is(err, straumerr.FrameTooLarge) {
 		t.Fatalf("got %v", err)
 	}
@@ -254,7 +255,7 @@ func TestWrongResponseType(t *testing.T) {
 		c.Reply(corr, &wire.ListTopicsOk{})
 	})
 	c := connect(t, b, nil)
-	if _, err := c.Do(context.Background(), &wire.Ping{}); !errors.Is(err, client.ErrProtocol) {
+	if _, err := link.Do(c, context.Background(), &wire.Ping{}); !errors.Is(err, client.ErrProtocol) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -264,7 +265,7 @@ func TestOversizedResponseClosesConnection(t *testing.T) {
 		c.Reply(corr, &wire.DescribeTopicOk{Name: string(make([]byte, 2000))})
 	})
 	c := connect(t, b, func(cfg *client.Config) { cfg.MaxResponseBytes = 1000; cfg.Retry.MaxAttempts = 1 })
-	if _, err := c.Do(context.Background(), &wire.DescribeTopic{}); !errors.Is(err, client.ErrConnection) {
+	if _, err := link.Do(c, context.Background(), &wire.DescribeTopic{}); !errors.Is(err, client.ErrConnection) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -302,7 +303,7 @@ func TestClosedClient(t *testing.T) {
 	b := fakebroker.Start(t, pong)
 	c := connect(t, b, nil)
 	_ = c.Close()
-	if _, err := c.Do(context.Background(), &wire.Ping{}); !errors.Is(err, client.ErrClosed) {
+	if _, err := link.Do(c, context.Background(), &wire.Ping{}); !errors.Is(err, client.ErrClosed) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -324,17 +325,17 @@ func TestCancelBeforeWriteKeepsConnection(t *testing.T) {
 	})
 	c := connect(t, b, nil)
 	first := make(chan error, 1)
-	go func() { _, err := c.Do(context.Background(), &wire.Ping{Nonce: 1}); first <- err }()
+	go func() { _, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 1}); first <- err }()
 	time.Sleep(20 * time.Millisecond)
 	large := make(chan error, 1)
 	go func() {
-		_, err := c.Do(context.Background(), &wire.Produce{Topic: "t", Messages: []wire.Message{{Body: make([]byte, 4<<20)}}})
+		_, err := link.Do(c, context.Background(), &wire.Produce{Topic: "t", Messages: []wire.Message{{Body: make([]byte, 4<<20)}}})
 		large <- err
 	}()
 	time.Sleep(100 * time.Millisecond) // the large write fills the socket and holds the lock
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := c.Do(ctx, &wire.Ping{Nonce: 2}); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := link.Do(c, ctx, &wire.Ping{Nonce: 2}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("got %v", err)
 	}
 	close(unblock)
@@ -344,7 +345,7 @@ func TestCancelBeforeWriteKeepsConnection(t *testing.T) {
 	if err := <-large; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Do(context.Background(), &wire.Ping{Nonce: 3}); err != nil {
+	if _, err := link.Do(c, context.Background(), &wire.Ping{Nonce: 3}); err != nil {
 		t.Fatal(err)
 	}
 	if b.Accepted() != 1 {

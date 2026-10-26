@@ -10,8 +10,9 @@ import (
 
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/internal/fakebroker"
+	"github.com/straum-io/straum-go-sdk/internal/link"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 func TestUnknownCodeIsNotRetried(t *testing.T) {
@@ -21,7 +22,7 @@ func TestUnknownCodeIsNotRetried(t *testing.T) {
 		c.Reply(corr, &wire.Error{Code: 999})
 	})
 	c := connect(t, b, nil)
-	_, err := c.Do(context.Background(), &wire.ListTopics{})
+	_, err := link.Do(c, context.Background(), &wire.ListTopics{})
 	if !errors.Is(err, straumerr.Code(999)) || calls.Load() != 1 {
 		t.Fatalf("got %v after %d calls", err, calls.Load())
 	}
@@ -37,7 +38,7 @@ func TestOverloadedBacksOffThenExhausts(t *testing.T) {
 		c.Reply(corr, &wire.Error{Code: straumerr.Overloaded, RetryAfterMs: 30})
 	})
 	c := connect(t, b, func(cfg *client.Config) { cfg.Retry.MaxAttempts = 3 })
-	_, err := c.Do(context.Background(), &wire.ListTopics{})
+	_, err := link.Do(c, context.Background(), &wire.ListTopics{})
 	if !errors.Is(err, straumerr.Overloaded) {
 		t.Fatalf("got %v", err)
 	}
@@ -55,7 +56,7 @@ func TestOverloadedBacksOffThenExhausts(t *testing.T) {
 func TestConnectionLostAfterLastAttempt(t *testing.T) {
 	b := fakebroker.Start(t, func(c *fakebroker.Conn, corr uint64, req wire.Request) { _ = c.Close() })
 	c := connect(t, b, func(cfg *client.Config) { cfg.Retry.MaxAttempts = 2 })
-	_, err := c.Do(context.Background(), &wire.ListTopics{})
+	_, err := link.Do(c, context.Background(), &wire.ListTopics{})
 	if !errors.Is(err, client.ErrConnection) {
 		t.Fatalf("got %v", err)
 	}

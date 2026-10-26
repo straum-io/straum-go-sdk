@@ -15,8 +15,8 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // Obj is a JSON object as decoded by Parse.

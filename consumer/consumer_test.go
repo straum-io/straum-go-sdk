@@ -10,8 +10,8 @@ import (
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/consumer"
 	"github.com/straum-io/straum-go-sdk/internal/fakebroker"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // A partition of "t" holding seqs start … 9; each Fetch returns at most
@@ -29,7 +29,7 @@ func broker(t *testing.T, start uint64, fetches chan<- *wire.Fetch) *client.Clie
 		resp := &wire.FetchOk{LeaderEpoch: 1, StartSeq: start, NextSeq: 10}
 		for s := max(f.FromSeq, start); s < 10 && len(resp.Messages) < 3; s++ {
 			resp.Messages = append(resp.Messages, wire.FetchedMessage{Seq: s, TimestampMs: 1000 + s,
-				Message: wire.Message{Body: []byte(fmt.Sprint(s))}})
+				Message: wire.Message{Key: []byte{}, Headers: []wire.Header{{Name: []byte("h"), Value: []byte("v")}}, Body: []byte(fmt.Sprint(s))}})
 		}
 		if len(resp.Messages) == 0 {
 			time.Sleep(time.Duration(f.MaxWaitMs) * time.Millisecond)
@@ -52,8 +52,12 @@ func TestFetchSendsOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.Messages) != 2 || f.Messages[0].Seq != 8 || f.NextSeq != 10 {
+	if len(f.Messages) != 2 || f.Messages[0].Seq != 8 || f.NextSeq != 10 || f.LeaderEpoch != 1 {
 		t.Fatalf("%+v", f)
+	}
+	if m := f.Messages[0]; m.Timestamp.UnixMilli() != 1008 || m.Key == nil || len(m.Key) != 0 ||
+		len(m.Headers) != 1 || string(m.Headers[0].Name) != "h" || string(m.Headers[0].Value) != "v" || string(m.Body) != "8" {
+		t.Fatalf("message %+v", m)
 	}
 	if r := <-fetches; r.MaxBytes != 4096 || r.MaxWaitMs != 20 || r.FromSeq != 8 || r.ExpectedLeaderEpoch != 0 {
 		t.Fatalf("request %+v", r)

@@ -46,7 +46,7 @@ push) push "${2:-}" ;;
 pr)
     push "${2:-}"
     for target in FuzzDecodeRequest FuzzDecodeResponse FuzzFrame; do
-        go test ./wire/ -run '^$' -fuzz "^${target}\$" -fuzztime "${FUZZTIME:-30s}"
+        go test ./internal/wire/ -run '^$' -fuzz "^${target}\$" -fuzztime "${FUZZTIME:-30s}"
     done
     ;;
 *)

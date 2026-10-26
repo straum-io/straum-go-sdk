@@ -25,7 +25,6 @@ import (
 	"github.com/straum-io/straum-go-sdk/internal/conformance"
 	"github.com/straum-io/straum-go-sdk/producer"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 const suite = "../../testdata/conformance"
@@ -118,8 +117,8 @@ func TestLiveSDK(t *testing.T) {
 	for w := range writers {
 		wg.Go(func() {
 			for i := range each {
-				m := wire.Message{Key: []byte(fmt.Sprintf("k%d", w)), Body: []byte(fmt.Sprintf("w%d-%d", w, i)),
-					Headers: []wire.Header{{Name: []byte("writer"), Value: []byte{byte(w)}}}}
+				m := client.Message{Key: []byte(fmt.Sprintf("k%d", w)), Body: []byte(fmt.Sprintf("w%d-%d", w, i)),
+					Headers: []client.Header{{Name: []byte("writer"), Value: []byte{byte(w)}}}}
 				if _, err := p.Produce(ctx, "orders", m); err != nil {
 					t.Error(err)
 					return
@@ -130,7 +129,7 @@ func TestLiveSDK(t *testing.T) {
 	wg.Wait()
 	// The same body with and without a key: stored once, fetched twice
 	// with each publication's own key.
-	ack, err := p.ProduceTo(ctx, "orders", 0, wire.Message{Body: []byte("same")}, wire.Message{Key: []byte{}, Body: []byte("same")})
+	ack, err := p.ProduceTo(ctx, "orders", 0, client.Message{Body: []byte("same")}, client.Message{Key: []byte{}, Body: []byte("same")})
 	if err != nil || ack.Count != 2 || ack.BaseSeq != writers*each {
 		t.Fatalf("batch: %+v %v", ack, err)
 	}
@@ -142,8 +141,8 @@ func TestLiveSDK(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if m.Seq != seq || m.TimestampMs == 0 {
-			t.Fatalf("message %d: seq %d ts %d", seq, m.Seq, m.TimestampMs)
+		if m.Seq != seq || m.Timestamp.UnixMilli() == 0 {
+			t.Fatalf("message %d: seq %d ts %v", seq, m.Seq, m.Timestamp)
 		}
 		if seq < writers*each {
 			w := m.Headers[0].Value[0]
@@ -166,13 +165,13 @@ func TestLiveSDK(t *testing.T) {
 		t.Fatalf("fetch past the end: %+v %v after %v", f, err, time.Since(start))
 	}
 
-	if _, err := p.Produce(ctx, "missing", wire.Message{}); !errors.Is(err, straumerr.UnknownTopic) {
+	if _, err := p.Produce(ctx, "missing", client.Message{}); !errors.Is(err, straumerr.UnknownTopic) {
 		t.Fatalf("unknown topic: %v", err)
 	}
-	if _, err := p.ProduceTo(ctx, "orders", 3, wire.Message{}); !errors.Is(err, straumerr.UnknownPartition) {
+	if _, err := p.ProduceTo(ctx, "orders", 3, client.Message{}); !errors.Is(err, straumerr.UnknownPartition) {
 		t.Fatalf("unknown partition: %v", err)
 	}
-	if _, err := p.ProduceTo(ctx, "orders", 0, wire.Message{Body: make([]byte, 1<<20+1)}); !errors.Is(err, straumerr.MessageTooLarge) {
+	if _, err := p.ProduceTo(ctx, "orders", 0, client.Message{Body: make([]byte, 1<<20+1)}); !errors.Is(err, straumerr.MessageTooLarge) {
 		t.Fatalf("large body: %v", err)
 	}
 
@@ -181,7 +180,7 @@ func TestLiveSDK(t *testing.T) {
 		t.Fatalf("list: %+v %v", topics, err)
 	}
 	d, err := a.DescribeTopic(ctx, "orders")
-	if err != nil || d.RetentionMs != 3600000 || d.Partitions[0].MessageCount != writers*each+2 {
+	if err != nil || d.Retention != time.Hour || d.Partitions[0].MessageCount != writers*each+2 {
 		t.Fatalf("describe: %+v %v", d, err)
 	}
 	m, err := a.Metadata(ctx, "orders", "missing")

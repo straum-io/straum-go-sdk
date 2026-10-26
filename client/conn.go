@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // ErrConnection marks a failure of the connection itself: dial, write,

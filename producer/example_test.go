@@ -8,7 +8,6 @@ import (
 
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/producer"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // Publishes a keyed message with a header to a broker on 127.0.0.1:7171.
@@ -22,9 +21,9 @@ func Example() {
 	defer c.Close()
 
 	p := producer.New(c, producer.Options{})
-	ack, err := p.Produce(ctx, "orders", wire.Message{
+	ack, err := p.Produce(ctx, "orders", client.Message{
 		Key:     []byte("customer-42"),
-		Headers: []wire.Header{{Name: []byte("source"), Value: []byte("web")}},
+		Headers: []client.Header{{Name: []byte("source"), Value: []byte("web")}},
 		Body:    []byte(`{"order": 1001}`),
 	})
 	if err != nil {

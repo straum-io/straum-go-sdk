@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/straum-io/straum-go-sdk/wire"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 )
 
 // Conn is one accepted connection.

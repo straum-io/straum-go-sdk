@@ -10,8 +10,8 @@ import (
 	"github.com/straum-io/straum-go-sdk/admin"
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/internal/fakebroker"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 func TestAdminRequests(t *testing.T) {

@@ -16,9 +16,9 @@ import (
 
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/consumer"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/producer"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // Broker is a straum-broker process with its own data directory.
@@ -426,9 +426,14 @@ func perform(addr string, op any) (Obj, error) {
 	var resp wire.Response
 	switch f.str("op") {
 	case "produce":
-		var msgs []wire.Message
+		var msgs []client.Message
 		for i, m := range f.arr("messages") {
-			msgs = append(msgs, message(f.obj(m, fmt.Sprintf("messages[%d]", i))))
+			wm := message(f.obj(m, fmt.Sprintf("messages[%d]", i)))
+			cm := client.Message{Key: wm.Key, Body: wm.Body}
+			for _, h := range wm.Headers {
+				cm.Headers = append(cm.Headers, client.Header(h))
+			}
+			msgs = append(msgs, cm)
 		}
 		p := producer.New(c, producer.Options{ProducerID: f.big("producer_id"), FirstSeq: f.big("producer_seq")})
 		if f.err != nil {
@@ -448,9 +453,18 @@ func perform(addr string, op any) (Obj, error) {
 		if f.err != nil {
 			return nil, f.err
 		}
-		r, err := cons.Fetch(ctx, f.str("topic"), f.u32("partition"), f.big("from_seq"))
+		b, err := cons.Fetch(ctx, f.str("topic"), f.u32("partition"), f.big("from_seq"))
 		if err != nil {
 			return outcome(nil, err), nil
+		}
+		r := &wire.FetchOk{LeaderEpoch: b.LeaderEpoch, StartSeq: b.StartSeq, NextSeq: b.NextSeq}
+		for _, m := range b.Messages {
+			wm := wire.FetchedMessage{Seq: m.Seq, TimestampMs: uint64(m.Timestamp.UnixMilli()),
+				Message: wire.Message{Key: m.Key, Body: m.Body}}
+			for _, h := range m.Headers {
+				wm.Headers = append(wm.Headers, wire.Header(h))
+			}
+			r.Messages = append(r.Messages, wm)
 		}
 		resp = r
 	default:

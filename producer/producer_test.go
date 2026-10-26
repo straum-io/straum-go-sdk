@@ -8,9 +8,9 @@ import (
 
 	"github.com/straum-io/straum-go-sdk/client"
 	"github.com/straum-io/straum-go-sdk/internal/fakebroker"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/producer"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
 
 // broker serves a topic "t" with four partitions and records every
@@ -60,7 +60,7 @@ func TestProduceUsesTheDefaultPartitioner(t *testing.T) {
 	ctx := context.Background()
 	keys := [][]byte{[]byte("user-1"), []byte("user-2"), {}, []byte("user-1")}
 	for _, k := range keys {
-		ack, err := p.Produce(ctx, "t", wire.Message{Key: k, Body: []byte("x")})
+		ack, err := p.Produce(ctx, "t", client.Message{Key: k, Body: []byte("x")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestProduceUsesTheDefaultPartitioner(t *testing.T) {
 			t.Errorf("request %d went to partition %d", i, r.Partition)
 		}
 	}
-	if ack, _ := p.Produce(ctx, "t", wire.Message{Body: []byte("x")}); ack.Timestamp.UnixMilli() != 1761350400000 {
+	if ack, _ := p.Produce(ctx, "t", client.Message{Body: []byte("x")}); ack.Timestamp.UnixMilli() != 1761350400000 {
 		t.Errorf("timestamp %v", ack.Timestamp)
 	}
 }
@@ -90,7 +90,7 @@ func TestKeylessMessagesRoundRobin(t *testing.T) {
 	}
 	seen := map[uint32]bool{}
 	for range 4 {
-		ack, err := p.Produce(context.Background(), "t", wire.Message{Body: []byte("x")})
+		ack, err := p.Produce(context.Background(), "t", client.Message{Body: []byte("x")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,12 +105,17 @@ func TestProduceToSendsOneRequest(t *testing.T) {
 	c, sent := broker(t)
 	p := producer.New(c, producer.Options{})
 	ack, err := p.ProduceTo(context.Background(), "t", 2,
-		wire.Message{Body: []byte("a")}, wire.Message{Key: []byte("k"), Headers: []wire.Header{{Name: []byte("h"), Value: []byte("v")}}, Body: []byte("b")})
+		client.Message{Body: []byte("a")}, client.Message{Key: []byte("k"), Headers: []client.Header{{Name: []byte("h"), Value: []byte("v")}}, Body: []byte("b")})
 	if err != nil || ack.Count != 2 || ack.Partition != 2 {
 		t.Fatalf("%+v %v", ack, err)
 	}
-	if r := sent(); len(r) != 1 || len(r[0].Messages) != 2 || r[0].Partition != 2 {
+	r := sent()
+	if len(r) != 1 || len(r[0].Messages) != 2 || r[0].Partition != 2 {
 		t.Fatalf("sent %+v", r)
+	}
+	if m := r[0].Messages; m[0].Key != nil || m[0].Headers != nil || string(m[1].Key) != "k" ||
+		len(m[1].Headers) != 1 || string(m[1].Headers[0].Name) != "h" || string(m[1].Headers[0].Value) != "v" || string(m[1].Body) != "b" {
+		t.Fatalf("messages %+v", m)
 	}
 	if _, err := p.ProduceTo(context.Background(), "t", 0); err == nil {
 		t.Fatal("empty request accepted")
@@ -120,7 +125,7 @@ func TestProduceToSendsOneRequest(t *testing.T) {
 func TestProduceToUnknownTopic(t *testing.T) {
 	c, _ := broker(t)
 	p := producer.New(c, producer.Options{})
-	if _, err := p.Produce(context.Background(), "missing", wire.Message{}); !errors.Is(err, straumerr.UnknownTopic) {
+	if _, err := p.Produce(context.Background(), "missing", client.Message{}); !errors.Is(err, straumerr.UnknownTopic) {
 		t.Fatalf("got %v", err)
 	}
 }

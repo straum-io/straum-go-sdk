@@ -22,9 +22,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/straum-io/straum-go-sdk/internal/link"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 	"github.com/straum-io/straum-go-sdk/straumerr"
-	"github.com/straum-io/straum-go-sdk/wire"
 )
+
+func init() {
+	link.Do = func(c any, ctx context.Context, req wire.Request) (wire.Response, error) {
+		return c.(*Client).do(ctx, nil, func(uint32) wire.Request { return req })
+	}
+	link.DoPartition = func(c any, ctx context.Context, topic string, partition uint32, build func(uint32) wire.Request) (wire.Response, error) {
+		return c.(*Client).do(ctx, &topicPartition{topic, partition}, build)
+	}
+}
 
 // Config configures a Client. Zero fields take the defaults named.
 type Config struct {
@@ -159,14 +169,14 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// Hello returns the HelloOk of a connected broker: the cluster id, its
-// node id and its frame and message limits.
-func (c *Client) Hello(ctx context.Context) (wire.HelloOk, error) {
+// Hello returns what a connected broker reported in its HelloOk: the
+// cluster id, its node id and its frame and message limits.
+func (c *Client) Hello(ctx context.Context) (BrokerInfo, error) {
 	cn, err := c.anyConn(ctx)
 	if err != nil {
-		return wire.HelloOk{}, err
+		return BrokerInfo{}, err
 	}
-	return cn.hello, nil
+	return BrokerInfo(cn.hello), nil
 }
 
 // live returns the open connection to node, dropping a failed one.
@@ -282,22 +292,6 @@ func sleep(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Do sends req to any broker, with the retries of the RetryPolicy, and
-// returns its success response. An Error response is returned as a
-// *straumerr.Error.
-func (c *Client) Do(ctx context.Context, req wire.Request) (wire.Response, error) {
-	return c.do(ctx, nil, func(uint32) wire.Request { return req })
-}
-
-// DoPartition sends the request build returns to the leader of a
-// partition, with the retries of the RetryPolicy. build gets the
-// expected_leader_epoch to send: 0 on the first attempt, the epoch
-// Metadata reported after a leader error. Retries rebuild the request
-// with the same producer id and seq (build must return them unchanged).
-func (c *Client) DoPartition(ctx context.Context, topic string, partition uint32, build func(epoch uint32) wire.Request) (wire.Response, error) {
-	return c.do(ctx, &topicPartition{topic, partition}, build)
-}
-
 func (c *Client) do(ctx context.Context, tp *topicPartition, build func(uint32) wire.Request) (wire.Response, error) {
 	var epoch uint32
 	backoff := c.cfg.Retry.BackoffMin
@@ -396,8 +390,8 @@ func (c *Client) learn(m *wire.MetadataOk) {
 // Metadata asks for the given topics, or every topic if none is given,
 // and updates the client's view of nodes and leaders. A topic that does
 // not exist has Error straumerr.UnknownTopic in the result.
-func (c *Client) Metadata(ctx context.Context, topics ...string) (*wire.MetadataOk, error) {
-	resp, err := c.Do(ctx, &wire.Metadata{Topics: topics})
+func (c *Client) Metadata(ctx context.Context, topics ...string) (*Metadata, error) {
+	resp, err := c.do(ctx, nil, func(uint32) wire.Request { return &wire.Metadata{Topics: topics} })
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +400,7 @@ func (c *Client) Metadata(ctx context.Context, topics ...string) (*wire.Metadata
 		return nil, fmt.Errorf("%w: Metadata answered with %T", ErrProtocol, resp)
 	}
 	c.learn(m)
-	return m, nil
+	return newMetadata(m), nil
 }
 
 // PartitionCount returns the topic's number of partitions, from Metadata

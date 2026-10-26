@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"github.com/straum-io/straum-go-sdk/internal/conformance"
-	"github.com/straum-io/straum-go-sdk/wire"
+	"github.com/straum-io/straum-go-sdk/internal/wire"
 )
 
-const suite = "../testdata/conformance"
+const suite = "../../testdata/conformance"
 
 type fixture struct {
 	name string

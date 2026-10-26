@@ -53,7 +53,7 @@ defer c.Close()
 _ = admin.New(c).CreateTopic(ctx, "orders", admin.TopicConfig{})
 
 ack, err := producer.New(c, producer.Options{}).Produce(ctx, "orders",
-	wire.Message{Key: []byte("customer-42"), Body: []byte(`{"order": 1001}`)})
+	client.Message{Key: []byte("customer-42"), Body: []byte(`{"order": 1001}`)})
 if err != nil {
 	log.Fatal(err)
 }
@@ -70,12 +70,14 @@ Complete examples are in the package documentation (`example_test.go` of
 
 | Package | |
 |---|---|
-| `wire` | frames and messages of protocol version 0, the default partitioner; no I/O |
-| `client` | connections, Hello, pipelining, routing to partition leaders, retries |
-| `producer` | `Produce` (default partitioner) and `ProduceTo` (explicit partition) |
+| `client` | connections, Hello, pipelining, routing to partition leaders, retries; `Message`, `Metadata` |
+| `producer` | `Produce` (default partitioner), `ProduceTo` (explicit partition), `Partition` |
 | `consumer` | `Fetch` and an `Iterator` that keeps its position |
 | `admin` | `CreateTopic`, `Metadata`, `ListTopics`, `DescribeTopic`, `BrokerStats`, `Ping` |
 | `straumerr` | error codes, retry classes, the broker's error |
+
+These five packages are the module's public API. The protocol codec is
+`internal/wire` and may change without notice.
 
 ## The contract
 
@@ -84,7 +86,7 @@ The protocol is Straum's `docs/protocol.md` at the commit pinned in
 `conformance/` from that commit:
 
 - every golden frame decodes to its JSON description and re-encodes to the
-  same bytes (`go test ./wire`);
+  same bytes (`go test ./internal/wire`);
 - every partitioner vector matches;
 - the broker scenarios run against a live `straum-broker`, and the client
   scenarios run the SDK against Straum's scripted `straum-fake-server`
