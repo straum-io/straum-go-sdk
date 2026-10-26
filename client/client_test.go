@@ -306,3 +306,48 @@ func TestClosedClient(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// A call cancelled while another call holds the write lock sends nothing:
+// the connection and the other calls survive.
+func TestCancelBeforeWriteKeepsConnection(t *testing.T) {
+	unblock := make(chan struct{})
+	b := fakebroker.Start(t, func(c *fakebroker.Conn, corr uint64, req wire.Request) {
+		switch r := req.(type) {
+		case *wire.Ping:
+			if r.Nonce == 1 {
+				<-unblock // stop reading, so the next large write blocks
+			}
+			pong(c, corr, req)
+		case *wire.Produce:
+			c.Reply(corr, &wire.ProduceOk{Count: uint32(len(r.Messages))})
+		}
+	})
+	c := connect(t, b, nil)
+	first := make(chan error, 1)
+	go func() { _, err := c.Do(context.Background(), &wire.Ping{Nonce: 1}); first <- err }()
+	time.Sleep(20 * time.Millisecond)
+	large := make(chan error, 1)
+	go func() {
+		_, err := c.Do(context.Background(), &wire.Produce{Topic: "t", Messages: []wire.Message{{Body: make([]byte, 4<<20)}}})
+		large <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // the large write fills the socket and holds the lock
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := c.Do(ctx, &wire.Ping{Nonce: 2}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("got %v", err)
+	}
+	close(unblock)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-large; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Do(context.Background(), &wire.Ping{Nonce: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if b.Accepted() != 1 {
+		t.Errorf("%d connections, want 1", b.Accepted())
+	}
+}

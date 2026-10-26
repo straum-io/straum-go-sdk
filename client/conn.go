@@ -226,6 +226,18 @@ func (c *conn) roundTrip(ctx context.Context, req wire.Request) (wire.Response, 
 
 	err = c.write(ctx, frame)
 	recycle(buf, frame)
+	if errors.Is(err, errNotSent) {
+		// Cancelled before taking the write lock: nothing was sent, the
+		// connection and the other calls on it are unaffected.
+		c.mu.Lock()
+		_, mine := c.pending[id]
+		delete(c.pending, id)
+		c.mu.Unlock()
+		if mine {
+			c.budget.release(weight)
+		}
+		return nil, ctx.Err()
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			// A partial frame may be on the wire: the connection is unusable.
@@ -259,13 +271,16 @@ func recycle(buf *[]byte, frame []byte) {
 	}
 }
 
+// errNotSent: write gave up before taking the write lock.
+var errNotSent = errors.New("straum: request not sent")
+
 func (c *conn) write(ctx context.Context, frame []byte) error {
 	select {
 	case c.wlock <- struct{}{}:
 	case <-c.done:
 		return c.err
 	case <-ctx.Done():
-		return ctx.Err()
+		return errNotSent
 	}
 	defer func() { <-c.wlock }()
 	deadline, _ := ctx.Deadline()
