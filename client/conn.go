@@ -283,6 +283,9 @@ func (c *conn) write(ctx context.Context, frame []byte) error {
 		return errNotSent
 	}
 	defer func() { <-c.wlock }()
+	if ctx.Err() != nil {
+		return errNotSent // select picks at random when both are ready
+	}
 	deadline, _ := ctx.Deadline()
 	if err := c.nc.SetWriteDeadline(deadline); err != nil {
 		return err
