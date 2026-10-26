@@ -64,8 +64,9 @@ func (a *Admin) CreateTopic(ctx context.Context, name string, cfg TopicConfig) e
 	return err
 }
 
-// Metadata returns the nodes and the given topics' partitions, or every
-// topic if none is given. A missing topic is listed with Error
+// Metadata returns the nodes and the given topics' partitions; with no
+// topics, only the nodes. More than client.MaxRequestTopics topics is
+// straumerr.MalformedRequest. A missing topic is listed with Error
 // straumerr.UnknownTopic.
 func (a *Admin) Metadata(ctx context.Context, topics ...string) (*client.Metadata, error) {
 	return a.c.Metadata(ctx, topics...)
@@ -77,17 +78,26 @@ type TopicSummary struct {
 	Partitions uint32
 }
 
-// ListTopics returns every topic by name.
-func (a *Admin) ListTopics(ctx context.Context) ([]TopicSummary, error) {
-	r, err := do[*wire.ListTopicsOk](ctx, a, &wire.ListTopics{})
+// ListTopics returns one page of topics by name: those after cursor ("" for
+// the first page), at most limit of them (0 or more than
+// client.MaxRequestTopics: client.MaxRequestTopics). next is the cursor of
+// the following page, "" after the last one. Pass it back unchanged; a
+// cursor the broker did not return gives unspecified results. The broker
+// keeps no state between pages: a topic created meanwhile may or may not
+// appear on a later page.
+func (a *Admin) ListTopics(ctx context.Context, cursor string, limit uint32) (topics []TopicSummary, next string, err error) {
+	if limit == 0 || limit > client.MaxRequestTopics {
+		limit = client.MaxRequestTopics
+	}
+	r, err := do[*wire.ListTopicsOk](ctx, a, &wire.ListTopics{Cursor: cursor, Limit: limit})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	out := make([]TopicSummary, len(r.Topics))
+	topics = make([]TopicSummary, len(r.Topics))
 	for i, t := range r.Topics {
-		out[i] = TopicSummary(t)
+		topics[i] = TopicSummary(t)
 	}
-	return out, nil
+	return topics, r.NextCursor, nil
 }
 
 // PartitionDescription is a partition's seq range and storage.

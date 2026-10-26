@@ -175,9 +175,26 @@ func TestLiveSDK(t *testing.T) {
 		t.Fatalf("large body: %v", err)
 	}
 
-	topics, err := a.ListTopics(ctx)
-	if err != nil || len(topics) != 1 || topics[0].Name != "orders" {
-		t.Fatalf("list: %+v %v", topics, err)
+	if err := a.CreateTopic(ctx, "payments", admin.TopicConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	topics, next, err := a.ListTopics(ctx, "", 1)
+	if err != nil || len(topics) != 1 || topics[0].Name != "orders" || next == "" {
+		t.Fatalf("list, first page: %+v %q %v", topics, next, err)
+	}
+	topics, next, err = a.ListTopics(ctx, next, 1)
+	if err != nil || len(topics) != 1 || topics[0].Name != "payments" || next != "" {
+		t.Fatalf("list, last page: %+v %q %v", topics, next, err)
+	}
+	if m, err := a.Metadata(ctx); err != nil || len(m.Topics) != 0 || len(m.Nodes) != 1 {
+		t.Fatalf("metadata without topics: %+v %v", m, err)
+	}
+	many := make([]string, client.MaxRequestTopics+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("t%d", i)
+	}
+	if _, err := a.Metadata(ctx, many...); !errors.Is(err, straumerr.MalformedRequest) {
+		t.Fatalf("metadata over the bound: %v", err)
 	}
 	d, err := a.DescribeTopic(ctx, "orders")
 	if err != nil || d.Retention != time.Hour || d.Partitions[0].MessageCount != writers*each+2 {
@@ -188,9 +205,9 @@ func TestLiveSDK(t *testing.T) {
 		t.Fatalf("metadata: %+v %v", m, err)
 	}
 	// The store counters include the broker's own records: one per
-	// CreateTopic (docs/protocol.md 4.11).
+	// CreateTopic (docs/protocol.md 4.11), two here.
 	s, err := a.BrokerStats(ctx)
-	if err != nil || s.MessagesAccepted != writers*each+2+1 || s.MessagesDeduplicated != 1 {
+	if err != nil || s.MessagesAccepted != writers*each+2+2 || s.MessagesDeduplicated != 1 {
 		t.Fatalf("stats: %+v %v", s, err)
 	}
 	if _, err := a.Ping(ctx); err != nil {

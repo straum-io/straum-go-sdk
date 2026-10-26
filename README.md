@@ -19,7 +19,7 @@ partition per topic, and no authentication beyond loopback.
 - **Fetch** with a byte budget and a long-poll wait, or iterate a partition
   from a position the caller keeps (the broker stores no offsets in
   version 0).
-- **Administer**: create topics, metadata, topic list and description,
+- **Administer**: create topics, metadata, a paged topic list, topic description,
   broker counters, ping.
 - **One client for many goroutines.** Requests are pipelined on one
   connection per broker; every call takes a `context.Context`; bytes in

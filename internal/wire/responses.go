@@ -89,8 +89,12 @@ type TopicSummary struct {
 	Partitions uint32
 }
 
-// ListTopicsOk lists every topic by name.
-type ListTopicsOk struct{ Topics []TopicSummary }
+// ListTopicsOk is one page of topics by name. NextCursor is empty after
+// the last page.
+type ListTopicsOk struct {
+	Topics     []TopicSummary
+	NextCursor string
+}
 
 // PartitionDescription is one partition of DescribeTopicOk.
 type PartitionDescription struct {
@@ -245,6 +249,7 @@ func (m *ListTopicsOk) encode(w *writer) {
 		w.string("name", t.Name)
 		w.u32(t.Partitions)
 	}
+	w.string("next_cursor", m.NextCursor)
 }
 
 func (m *DescribeTopicOk) encode(w *writer) {
@@ -344,6 +349,7 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 		for range n {
 			l.Topics = append(l.Topics, TopicSummary{Name: r.string(), Partitions: r.u32()})
 		}
+		l.NextCursor = r.string()
 		resp = l
 	case TypeDescribeTopic | ResponseBit:
 		d := &DescribeTopicOk{Name: r.string(), ReplicationFactor: r.u16(), RetentionMs: r.u64()}

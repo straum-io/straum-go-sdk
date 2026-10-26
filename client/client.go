@@ -387,9 +387,15 @@ func (c *Client) learn(m *wire.MetadataOk) {
 	}
 }
 
-// Metadata asks for the given topics, or every topic if none is given,
-// and updates the client's view of nodes and leaders. A topic that does
-// not exist has Error straumerr.UnknownTopic in the result.
+// MaxRequestTopics is the most topics a Metadata request may name and the
+// most a ListTopics page holds (docs/protocol.md sections 4.3 and 4.9).
+const MaxRequestTopics = 1000
+
+// Metadata asks for the nodes and the given topics, and updates the
+// client's view of nodes and leaders. With no topics it returns only the
+// cluster and its nodes. More than MaxRequestTopics topics is
+// straumerr.MalformedRequest. A topic that does not exist has Error
+// straumerr.UnknownTopic in the result.
 func (c *Client) Metadata(ctx context.Context, topics ...string) (*Metadata, error) {
 	resp, err := c.do(ctx, nil, func(uint32) wire.Request { return &wire.Metadata{Topics: topics} })
 	if err != nil {

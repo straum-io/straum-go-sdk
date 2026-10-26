@@ -99,7 +99,7 @@ func RequestJSON(req wire.Request) Obj {
 		name, body = "Fetch", Obj{"topic": r.Topic, "partition": num(r.Partition), "from_seq": big(r.FromSeq),
 			"max_bytes": num(r.MaxBytes), "max_wait_ms": num(r.MaxWaitMs), "expected_leader_epoch": num(r.ExpectedLeaderEpoch)}
 	case *wire.ListTopics:
-		name, body = "ListTopics", Obj{}
+		name, body = "ListTopics", Obj{"cursor": r.Cursor, "limit": num(r.Limit)}
 	case *wire.DescribeTopic:
 		name, body = "DescribeTopic", Obj{"name": r.Name}
 	case *wire.BrokerStats:
@@ -161,7 +161,7 @@ func ResponseJSON(resp wire.Response) Obj {
 		for _, t := range r.Topics {
 			topics = append(topics, Obj{"name": t.Name, "partitions": num(t.Partitions)})
 		}
-		name, body = "ListTopicsOk", Obj{"topics": topics}
+		name, body = "ListTopicsOk", Obj{"topics": topics, "next_cursor": r.NextCursor}
 	case *wire.DescribeTopicOk:
 		parts := []any{}
 		for _, p := range r.Partitions {
@@ -374,7 +374,7 @@ func RequestFromJSON(v any) (wire.Request, error) {
 		req = &wire.Fetch{Topic: f.str("topic"), Partition: f.u32("partition"), FromSeq: f.big("from_seq"),
 			MaxBytes: f.u32("max_bytes"), MaxWaitMs: f.u32("max_wait_ms"), ExpectedLeaderEpoch: f.u32("expected_leader_epoch")}
 	case "ListTopics":
-		req = &wire.ListTopics{}
+		req = &wire.ListTopics{Cursor: f.str("cursor"), Limit: f.u32("limit")}
 	case "DescribeTopic":
 		req = &wire.DescribeTopic{Name: f.str("name")}
 	case "BrokerStats":
@@ -435,7 +435,7 @@ func ResponseFromJSON(v any) (wire.Response, error) {
 		}
 		resp = r
 	case "ListTopicsOk":
-		r := &wire.ListTopicsOk{}
+		r := &wire.ListTopicsOk{NextCursor: f.str("next_cursor")}
 		for i, t := range f.arr("topics") {
 			g := f.obj(t, fmt.Sprintf("topics[%d]", i))
 			r.Topics = append(r.Topics, wire.TopicSummary{Name: g.str("name"), Partitions: g.u32("partitions")})

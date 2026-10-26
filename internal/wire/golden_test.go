@@ -64,8 +64,8 @@ func canonical(t *testing.T, v any) string {
 // encoding the description gives exactly the frame.
 func TestGoldenFrames(t *testing.T) {
 	all := fixtures(t)
-	if len(all) != 59 {
-		t.Fatalf("index lists %d fixtures, want 59 (testdata/conformance/SOURCE)", len(all))
+	if len(all) != 60 {
+		t.Fatalf("index lists %d fixtures, want 60 (testdata/conformance/SOURCE)", len(all))
 	}
 	for _, f := range all {
 		t.Run(f.name, func(t *testing.T) {

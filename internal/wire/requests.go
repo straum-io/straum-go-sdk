@@ -51,8 +51,12 @@ type Fetch struct {
 	ExpectedLeaderEpoch uint32
 }
 
-// ListTopics has an empty body (section 4.9).
-type ListTopics struct{}
+// ListTopics asks for one page of topics by name (section 4.9): the
+// topics after Cursor ("" for the first page), at most Limit of them.
+type ListTopics struct {
+	Cursor string
+	Limit  uint32
+}
 
 // DescribeTopic (section 4.10).
 type DescribeTopic struct{ Name string }
@@ -108,8 +112,11 @@ func (m *CreateTopic) encode(w *writer) {
 
 func (m *DeleteTopic) encode(w *writer)   { w.string("name", m.Name) }
 func (m *DescribeTopic) encode(w *writer) { w.string("name", m.Name) }
-func (*ListTopics) encode(*writer)        {}
-func (*BrokerStats) encode(*writer)       {}
+func (m *ListTopics) encode(w *writer) {
+	w.string("cursor", m.Cursor)
+	w.u32(m.Limit)
+}
+func (*BrokerStats) encode(*writer) {}
 
 func (m *Produce) encode(w *writer) {
 	w.string("topic", m.Topic)
@@ -194,7 +201,7 @@ func DecodeRequest(msgType uint16, body []byte) (Request, error) {
 			ExpectedLeaderEpoch: r.u32(),
 		}
 	case TypeListTopics:
-		req = &ListTopics{}
+		req = &ListTopics{Cursor: r.string(), Limit: r.u32()}
 	case TypeDescribeTopic:
 		req = &DescribeTopic{Name: r.string()}
 	case TypeBrokerStats:

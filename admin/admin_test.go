@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,7 +29,13 @@ func TestAdminRequests(t *testing.T) {
 		case *wire.Metadata:
 			c.Reply(corr, &wire.MetadataOk{ClusterID: "fake", Topics: []wire.TopicMetadata{{Name: "gone", Error: straumerr.UnknownTopic}}})
 		case *wire.ListTopics:
-			c.Reply(corr, &wire.ListTopicsOk{Topics: []wire.TopicSummary{{Name: "a", Partitions: 1}}})
+			// The broker echoes the request: one topic named after the
+			// cursor and limit, and a next cursor unless the cursor is "z".
+			next := "z"
+			if r.Cursor == "z" {
+				next = ""
+			}
+			c.Reply(corr, &wire.ListTopicsOk{Topics: []wire.TopicSummary{{Name: fmt.Sprintf("%s/%d", r.Cursor, r.Limit), Partitions: 1}}, NextCursor: next})
 		case *wire.DescribeTopic:
 			c.Reply(corr, &wire.DescribeTopicOk{Name: r.Name, ReplicationFactor: 1,
 				Partitions: []wire.PartitionDescription{{NextSeq: 5, MessageCount: 5}}})
@@ -58,7 +65,13 @@ func TestAdminRequests(t *testing.T) {
 	if m, err := a.Metadata(ctx, "gone"); err != nil || m.Topics[0].Error != straumerr.UnknownTopic {
 		t.Errorf("metadata %+v %v", m, err)
 	}
-	if l, err := a.ListTopics(ctx); err != nil || len(l) != 1 || l[0].Name != "a" {
+	if l, next, err := a.ListTopics(ctx, "", 0); err != nil || len(l) != 1 || l[0].Name != "/1000" || next != "z" {
+		t.Errorf("list %+v %q %v", l, next, err)
+	}
+	if l, next, err := a.ListTopics(ctx, "z", 5000); err != nil || len(l) != 1 || l[0].Name != "z/1000" || next != "" {
+		t.Errorf("list %+v %q %v", l, next, err)
+	}
+	if l, _, err := a.ListTopics(ctx, "m", 7); err != nil || l[0].Name != "m/7" {
 		t.Errorf("list %+v %v", l, err)
 	}
 	if d, err := a.DescribeTopic(ctx, "orders"); err != nil || d.Name != "orders" || d.Partitions[0].MessageCount != 5 {
