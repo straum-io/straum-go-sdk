@@ -1,0 +1,63 @@
+name: ci
+
+# scripts/validate.sh on GitHub's Linux runner: the unit checks, -race and a
+# fuzz smoke run in one job; the live conformance against straum-broker and
+# straum-fake-server built from the Straum commit in CONTRACT in another.
+# Both run on the newest patch of Go 1.26 (the minimum in go.mod) and 1.27
+# (D-211).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26.x", "1.27.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: scripts/validate.sh quick
+      - name: govulncheck (version pinned in scripts/validate.sh)
+        run: |
+          go run "$(sed -n 's/^GOVULNCHECK="\(.*\)"$/\1/p' scripts/validate.sh)" ./...
+      - run: go test -race -count=1 ./...
+      - name: Fuzz smoke
+        run: |
+          for target in FuzzDecodeRequest FuzzDecodeResponse FuzzFrame; do
+            go test ./internal/wire/ -run '^$' -fuzz "^${target}\$" -fuzztime 10s
+          done
+
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26.x", "1.27.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - id: contract
+        run: |
+          echo "commit=$(sed -n 's/^commit: //p' CONTRACT)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: straum-io/straum
+          ref: ${{ steps.contract.outputs.commit }}
+          path: straum
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: straum
+      - run: scripts/sync-conformance.sh --check straum
+      - run: scripts/live.sh "$PWD/straum" -race
