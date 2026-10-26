@@ -198,8 +198,10 @@ func (c *conn) close(err error) {
 // returned as a *wire.Error response, not as an error.
 func (c *conn) roundTrip(ctx context.Context, req wire.Request) (wire.Response, error) {
 	id := c.nextID.Add(1) // never 0, never reused on this connection
-	frame, err := wire.AppendRequest(nil, id, req)
+	buf := frameBufs.Get().(*[]byte)
+	frame, err := wire.AppendRequest((*buf)[:0], id, req)
 	if err != nil {
+		frameBufs.Put(buf)
 		return nil, err
 	}
 	if limit := c.hello.MaxFrameBytes; limit != 0 && uint64(len(frame)) > uint64(limit) {
@@ -222,7 +224,9 @@ func (c *conn) roundTrip(ctx context.Context, req wire.Request) (wire.Response, 
 	c.pending[id] = call
 	c.mu.Unlock()
 
-	if err := c.write(ctx, frame); err != nil {
+	err = c.write(ctx, frame)
+	recycle(buf, frame)
+	if err != nil {
 		if ctx.Err() != nil {
 			// A partial frame may be on the wire: the connection is unusable.
 			c.close(&connError{"write", c.addr, ctx.Err()})
@@ -238,6 +242,20 @@ func (c *conn) roundTrip(ctx context.Context, req wire.Request) (wire.Response, 
 		// The reader releases the budget when the response or the
 		// connection's failure arrives.
 		return nil, ctx.Err()
+	}
+}
+
+// frameBufs holds encode buffers. A frame is not referenced after write
+// returns, so the next request reuses its buffer instead of growing a new
+// one by appends.
+var frameBufs = sync.Pool{New: func() any { return new([]byte) }}
+
+// recycle returns a frame's buffer to frameBufs unless it is larger than
+// 4 MiB, so one large request does not keep its memory in the pool.
+func recycle(buf *[]byte, frame []byte) {
+	if cap(frame) <= 4<<20 {
+		*buf = frame[:0]
+		frameBufs.Put(buf)
 	}
 }
 
