@@ -104,16 +104,6 @@ type Message struct {
 	Body    []byte
 }
 
-// ContentBytes is the size Fetch's max_bytes counts: key, header names and
-// values, and body.
-func (m *Message) ContentBytes() int {
-	n := len(m.Key) + len(m.Body)
-	for _, h := range m.Headers {
-		n += len(h.Name) + len(h.Value)
-	}
-	return n
-}
-
 func (m *Message) encode(w *writer) {
 	var flags uint8
 	if m.Key != nil {
