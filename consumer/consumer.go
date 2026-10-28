@@ -18,9 +18,12 @@ import (
 
 // Options configure fetches.
 type Options struct {
-	// MaxBytes bounds the key, header and body bytes of one response
-	// (default 1 MiB); the broker caps it at its max_fetch_bytes. The first
-	// message is returned even if it alone is larger.
+	// MaxBytes bounds the encoded size of the messages in one response:
+	// per message its seq, timestamp, flags, key and headers with their
+	// lengths, and body with its length (default 1 MiB); the broker caps it
+	// at its max_fetch_bytes and also returns at most its
+	// max_fetch_messages messages. The first message is returned even if it
+	// alone is larger.
 	MaxBytes uint32
 	// MaxWait is how long the broker waits for a message when none is
 	// available (default 500 ms; a negative value: no wait); the broker
