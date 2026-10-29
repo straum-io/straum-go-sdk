@@ -299,6 +299,9 @@ func (c *conn) write(ctx context.Context, frame []byte) error {
 func (c *conn) readLoop(maxResponse int) {
 	r := bufio.NewReaderSize(c.nc, 64<<10)
 	var head [wire.HeaderSize]byte
+	// The negotiated version, 0 until a HelloOk of an offered version
+	// arrives.
+	var version uint16
 	for {
 		if _, err := io.ReadFull(r, head[:]); err != nil {
 			c.close(&connError{"read", c.addr, err})
@@ -325,12 +328,15 @@ func (c *conn) readLoop(maxResponse int) {
 			continue // not a request of this connection (a broker error with id 0)
 		}
 		c.budget.release(call.weight)
-		resp, err := wire.DecodeResponse(h.Type, body)
+		resp, err := wire.DecodeResponseVersion(version, h.Type, body)
 		switch {
 		case err != nil:
 			err = fmt.Errorf("%w: response type %#06x: %v", ErrProtocol, h.Type, err)
 		case h.Type != call.want && h.Type != wire.TypeError:
 			resp, err = nil, fmt.Errorf("%w: response type %#06x to a request expecting %#06x", ErrProtocol, h.Type, call.want)
+		}
+		if hello, ok := resp.(*wire.HelloOk); ok && hello.Version <= wire.Version {
+			version = hello.Version
 		}
 		call.ch <- result{resp, err}
 	}

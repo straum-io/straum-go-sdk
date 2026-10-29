@@ -31,9 +31,16 @@ var ErrTooLong = errors.New("wire: value too long for its length field")
 
 // reader decodes little-endian fields from a body. The first error sticks:
 // later reads return zero values, and err reports the first failure.
+//
+// ext selects the response rules of protocol version 1 (Straum
+// docs/protocol.md section 10.2): an array element of struct type starts
+// with its length, and bytes after the fields a decoder knows, at the end
+// of a body or of an element, are skipped. Version 0 decodes with ext
+// false and rejects such bytes.
 type reader struct {
 	b   []byte
 	err error
+	ext bool
 }
 
 func (r *reader) fail(err error) {
@@ -138,16 +145,74 @@ func (r *reader) count(minSize int) int {
 	return int(n)
 }
 
+// uvarint reads a length of version 1: 7 bits per byte, low group first,
+// the high bit set on every byte but the last; at most 5 bytes, in its
+// shortest form, at most 2^32−1.
+func (r *reader) uvarint() uint32 {
+	if r.err != nil {
+		return 0
+	}
+	var v uint64
+	for i := range 5 {
+		if i == len(r.b) {
+			r.fail(ErrTruncated)
+			return 0
+		}
+		c := r.b[i]
+		v |= uint64(c&0x7f) << (7 * i)
+		if c&0x80 == 0 {
+			switch {
+			case i > 0 && c == 0:
+				r.invalid("varint not in its shortest form")
+			case v > math.MaxUint32:
+				r.invalid("varint above 2^32-1")
+			default:
+				r.b = r.b[i+1:]
+				return uint32(v)
+			}
+			return 0
+		}
+	}
+	r.invalid("varint longer than 5 bytes")
+	return 0
+}
+
+// item decodes one array element with fn. Without ext, fn reads the
+// element in place. With ext, the element starts with its length as a
+// uvarint; fn reads only within that length, a field cut by it is
+// ErrTruncated, and the bytes fn leaves are skipped.
+func (r *reader) item(fn func()) {
+	if !r.ext {
+		fn()
+		return
+	}
+	n := r.uvarint()
+	if r.err != nil {
+		return
+	}
+	if uint64(n) > uint64(len(r.b)) {
+		r.fail(ErrTruncated)
+		return
+	}
+	rest := r.b[n:]
+	r.b = r.b[:n:n]
+	fn()
+	if r.err == nil {
+		r.b = rest
+	}
+}
+
 func (r *reader) invalid(what string) {
 	r.fail(fmt.Errorf("%w: %s", ErrInvalidValue, what))
 }
 
-// finish returns the first error, or ErrTrailingBytes if bytes are left.
+// finish returns the first error, or ErrTrailingBytes if bytes are left
+// and ext is false.
 func (r *reader) finish() error {
 	if r.err != nil {
 		return r.err
 	}
-	if len(r.b) != 0 {
+	if len(r.b) != 0 && !r.ext {
 		return ErrTrailingBytes
 	}
 	return nil

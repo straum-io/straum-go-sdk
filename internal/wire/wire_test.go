@@ -154,9 +154,13 @@ func FuzzDecodeRequest(f *testing.F) {
 	})
 }
 
+// Version 1 decoding is fuzzed for panics only: it skips bytes, so its
+// input does not re-encode. A HelloOk naming version 1 or later re-encodes
+// to a prefix of its body under version 0 too.
 func FuzzDecodeResponse(f *testing.F) {
 	seed(f)
 	f.Fuzz(func(t *testing.T, typ uint16, body []byte) {
+		_, _ = wire.DecodeResponseVersion(1, typ, body)
 		resp, err := wire.DecodeResponse(typ, body)
 		if err != nil {
 			return
@@ -164,6 +168,12 @@ func FuzzDecodeResponse(f *testing.F) {
 		b, err := wire.AppendResponse(nil, 0, resp)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if h, ok := resp.(*wire.HelloOk); ok && h.Version >= 1 {
+			if !bytes.HasPrefix(body, b[wire.HeaderSize:]) {
+				t.Fatalf("HelloOk %x does not start with its fields %x", body, b[wire.HeaderSize:])
+			}
+			return
 		}
 		if !bytes.Equal(b[wire.HeaderSize:], body) {
 			t.Fatalf("re-encoding differs: %x vs %x", b[wire.HeaderSize:], body)
@@ -183,5 +193,6 @@ func FuzzFrame(f *testing.F) {
 		}
 		_, _ = wire.DecodeRequest(h.Type, body)
 		_, _ = wire.DecodeResponse(h.Type, body)
+		_, _ = wire.DecodeResponseVersion(1, h.Type, body)
 	})
 }

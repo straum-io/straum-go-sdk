@@ -1,6 +1,8 @@
 // Package wire encodes and decodes the frames of the Straum protocol,
 // version 0 (docs/protocol.md in the Straum repository, at the commit named
-// in this module's CONTRACT file). It does no I/O.
+// in this module's CONTRACT file). It does no I/O. DecodeResponseVersion
+// also decodes responses under the extensibility rules of version 1, which
+// the client does not offer yet.
 //
 // Decoding never panics: every input gives a value or an error. Byte
 // fields of a decoded value (keys, header names and values, bodies, the
