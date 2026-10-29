@@ -5,7 +5,7 @@ produce, fetch and administer topics over Straum protocol version 0. Pure
 Go, standard library only.
 
 Straum speaks its own binary protocol over TCP. This module implements it
-for Go programs (the Straum CLI and the console backend will build on it)
+for Go programs ([straum-cli](https://github.com/straum-io/straum-cli) builds on it; the console backend will)
 and is checked against the same conformance suite as Straum's Rust client. Like
 the broker, it is experimental: version 0 of the protocol is one node, one
 partition per topic, and no authentication beyond loopback.
@@ -34,12 +34,13 @@ partition per topic, and no authentication beyond loopback.
 
 ## Quick start
 
-You need Go 1.26 or later and a running `straum-broker` (build it from
+You need Go 1.26.0 or later (the `go` line of `go.mod`; CI tests Go 1.26
+and 1.27) and a running `straum-broker` (build it from
 the Straum repository; `cargo run --release -p straum-broker -- --data-dir
 /tmp/straum --cluster-id dev --node-id 1 --listen 127.0.0.1:7171`).
 
 ```sh
-go get github.com/straum-io/straum-go-sdk
+go get github.com/straum-io/straum-go-sdk@v0.1.0
 ```
 
 ```go
