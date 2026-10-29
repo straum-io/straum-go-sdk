@@ -292,9 +292,30 @@ func (m *Error) encode(w *writer) {
 	w.u16(m.MaxVersion)
 }
 
-// DecodeResponse decodes a response body of the given message type.
+// DecodeResponse decodes a response body of the given message type under
+// version 0.
 func DecodeResponse(msgType uint16, body []byte) (Response, error) {
-	r := &reader{b: body}
+	return DecodeResponseVersion(0, msgType, body)
+}
+
+// DecodeResponseVersion decodes a response body of a connection that
+// negotiated version. Before HelloOk a connection decodes under version 0,
+// so an error sent before it keeps version 0's layout.
+//
+// Version 0 is strict (section 1). From version 1 on, response bodies are
+// extensible (section 10.2 of the version 1 draft, straum-io/straum#129):
+// every array element of struct type starts
+// with its length as a uvarint, and the bytes after the fields this
+// package knows, at the end of a body or of an element, are skipped. The
+// layouts are otherwise version 0's. Version 1 is not offered yet, and
+// which elements carry a length follows the draft until it is approved.
+//
+// HelloOk is read before the version is fixed. Its first five fields are
+// version 0's and come first in every version, so a HelloOk naming
+// version 1 or later is decoded up to them under any version and its
+// remaining bytes are skipped.
+func DecodeResponseVersion(version, msgType uint16, body []byte) (Response, error) {
+	r := &reader{b: body, ext: version >= 1}
 	var resp Response
 	switch msgType {
 	case TypeError:
@@ -308,13 +329,17 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 			MaxVersion:   r.u16(),
 		}
 	case TypeHello | ResponseBit:
-		resp = &HelloOk{
+		h := &HelloOk{
 			Version:         r.u16(),
 			ClusterID:       r.string(),
 			NodeID:          r.u32(),
 			MaxFrameBytes:   r.u32(),
 			MaxMessageBytes: r.u32(),
 		}
+		if h.Version >= 1 {
+			r.ext = true
+		}
+		resp = h
 	case TypePing | ResponseBit:
 		resp = &Pong{Nonce: r.u64()}
 	case TypeMetadata | ResponseBit:
@@ -335,8 +360,11 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 		n := r.count(16 + minMessage)
 		f.Messages = make([]FetchedMessage, 0, n)
 		for range n {
-			m := FetchedMessage{Seq: r.u64(), TimestampMs: r.u64()}
-			m.Message = decodeMessage(r)
+			var m FetchedMessage
+			r.item(func() {
+				m.Seq, m.TimestampMs = r.u64(), r.u64()
+				m.Message = decodeMessage(r)
+			})
 			if r.err != nil {
 				break
 			}
@@ -347,7 +375,9 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 		n := r.count(2 + 4)
 		l := &ListTopicsOk{Topics: make([]TopicSummary, 0, n)}
 		for range n {
-			l.Topics = append(l.Topics, TopicSummary{Name: r.string(), Partitions: r.u32()})
+			var t TopicSummary
+			r.item(func() { t = TopicSummary{Name: r.string(), Partitions: r.u32()} })
+			l.Topics = append(l.Topics, t)
 		}
 		l.NextCursor = r.string()
 		resp = l
@@ -356,13 +386,17 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 		n := r.count(4 + 32)
 		d.Partitions = make([]PartitionDescription, 0, n)
 		for range n {
-			d.Partitions = append(d.Partitions, PartitionDescription{
-				Partition:    r.u32(),
-				StartSeq:     r.u64(),
-				NextSeq:      r.u64(),
-				MessageCount: r.u64(),
-				IndexBytes:   r.u64(),
+			var p PartitionDescription
+			r.item(func() {
+				p = PartitionDescription{
+					Partition:    r.u32(),
+					StartSeq:     r.u64(),
+					NextSeq:      r.u64(),
+					MessageCount: r.u64(),
+					IndexBytes:   r.u64(),
+				}
 			})
+			d.Partitions = append(d.Partitions, p)
 		}
 		resp = d
 	case TypeBrokerStats | ResponseBit:
@@ -396,25 +430,34 @@ func decodeMetadataOk(r *reader) *MetadataOk {
 	n := r.count(4 + 2 + 2 + 2)
 	m.Nodes = make([]Node, 0, n)
 	for range n {
-		m.Nodes = append(m.Nodes, Node{NodeID: r.u32(), Host: r.string(), Port: r.u16(), Rack: r.string()})
+		var nd Node
+		r.item(func() { nd = Node{NodeID: r.u32(), Host: r.string(), Port: r.u16(), Rack: r.string()} })
+		m.Nodes = append(m.Nodes, nd)
 	}
 	n = r.count(2 + 2 + 4)
 	m.Topics = make([]TopicMetadata, 0, n)
 	for range n {
-		t := TopicMetadata{Name: r.string(), Error: straumerr.Code(r.u16())}
-		np := r.count(4*5 + 16)
-		t.Partitions = make([]PartitionMetadata, 0, np)
-		for range np {
-			t.Partitions = append(t.Partitions, PartitionMetadata{
-				Partition:      r.u32(),
-				LeaderNodeID:   r.u32(),
-				LeaderEpoch:    r.u32(),
-				Replicas:       readU32s(r),
-				InSyncReplicas: readU32s(r),
-				StartSeq:       r.u64(),
-				NextSeq:        r.u64(),
-			})
-		}
+		var t TopicMetadata
+		r.item(func() {
+			t = TopicMetadata{Name: r.string(), Error: straumerr.Code(r.u16())}
+			np := r.count(4*5 + 16)
+			t.Partitions = make([]PartitionMetadata, 0, np)
+			for range np {
+				var p PartitionMetadata
+				r.item(func() {
+					p = PartitionMetadata{
+						Partition:      r.u32(),
+						LeaderNodeID:   r.u32(),
+						LeaderEpoch:    r.u32(),
+						Replicas:       readU32s(r),
+						InSyncReplicas: readU32s(r),
+						StartSeq:       r.u64(),
+						NextSeq:        r.u64(),
+					}
+				})
+				t.Partitions = append(t.Partitions, p)
+			}
+		})
 		m.Topics = append(m.Topics, t)
 	}
 	return m
