@@ -33,7 +33,8 @@ var ErrTooLong = errors.New("wire: value too long for its length field")
 // later reads return zero values, and err reports the first failure.
 //
 // ext selects the response rules of protocol version 1 (Straum
-// docs/protocol.md section 10.2): an array element of struct type starts
+// docs/protocol.md section 10.2 in the draft of straum-io/straum#129, not
+// yet at the CONTRACT commit): an array element of struct type starts
 // with its length, and bytes after the fields a decoder knows, at the end
 // of a body or of an element, are skipped. Version 0 decodes with ext
 // false and rejects such bytes.

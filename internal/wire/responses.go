@@ -303,10 +303,12 @@ func DecodeResponse(msgType uint16, body []byte) (Response, error) {
 // so an error sent before it keeps version 0's layout.
 //
 // Version 0 is strict (section 1). From version 1 on, response bodies are
-// extensible (section 10.2): every array element of struct type starts
+// extensible (section 10.2 of the version 1 draft, straum-io/straum#129):
+// every array element of struct type starts
 // with its length as a uvarint, and the bytes after the fields this
 // package knows, at the end of a body or of an element, are skipped. The
-// layouts are otherwise version 0's.
+// layouts are otherwise version 0's. Version 1 is not offered yet, and
+// which elements carry a length follows the draft until it is approved.
 //
 // HelloOk is read before the version is fixed. Its first five fields are
 // version 0's and come first in every version, so a HelloOk naming
